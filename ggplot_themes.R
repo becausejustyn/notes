@@ -1,5 +1,7 @@
 # Data Viz
 
+#https://github.com/nsgrantham/ggdark/blob/master/R/themes.R
+#https://github.com/nsgrantham/ggdark/blob/master/R/dark_mode.R
 
 # https://github.com/koundy/ggplot_theme_Publication/blob/master/ggplot_theme_Publication-2.R
 
