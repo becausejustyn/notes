@@ -184,3 +184,28 @@ theme_fivethirtyeight <- function(base_size = 13, base_family = "") {
       complete = TRUE
     )
 }
+
+
+
+theme_SB <- theme(
+  line = element_line(lineend = "round", color = "darkblue"),
+  text = element_text(color = "darkblue"),
+  plot.background = element_rect(fill = "grey95", color = "transparent"),
+  panel.border = element_rect(color = "darkblue", fill = NA),
+  panel.background = element_rect(fill = "white", color = "transparent"),
+  axis.ticks = element_line(color = "darkblue", size = 0.5),
+  axis.ticks.length = unit(2.75, "pt"),
+  axis.title = element_text(size = 8),
+  axis.text = element_text(size = 7, color = "darkblue"),
+  plot.title = element_text(size = 14),
+  plot.subtitle = element_text(size = 8),
+  plot.caption = element_text(size = 5),
+  legend.background = element_rect(fill = "grey90", color = "darkblue"),
+  legend.key = element_blank(),
+  panel.grid.minor = element_blank(),
+  panel.grid.major = element_line(color = "grey85", size = 0.3),
+  axis.title.y = element_text(angle = 0, vjust = 0.5),
+  strip.background = element_blank(),
+  strip.text = element_text(size = 6, color = "darkblue"),
+  legend.position = "bottom"
+)
