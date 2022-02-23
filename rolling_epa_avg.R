@@ -432,3 +432,142 @@ create_rolling_data <- function(pbp, move = TRUE, team_n = 10L, pt_diff_type = "
 }
 
 
+
+# Function to compute predictiveness
+double_for_accuracy_check <- function(dataset, type) {
+  # Double games (one row per team rather than one row per game)
+  g1 <- dataset %>%
+    dplyr::transmute(.data$gameday, .data$game_id, .data$season, .data$week,
+      team = .data$away_team,
+      opponent = .data$home_team,
+      win = dplyr::if_else(.data$win == 1, 0, 1),
+      margin = -.data$home_margin,
+      .data$opp_adjusted_point_differential,
+      .data$opp_adjusted_off_epa,
+      .data$opp_adjusted_def_epa,
+      .data$opp_adjusted_off_pass_epa,
+      .data$opp_adjusted_def_pass_epa,
+      .data$opp_adjusted_off_rush_epa,
+      .data$opp_adjusted_def_rush_epa,
+      .data$opp_adjusted_off_dropback_pct,
+      .data$opp_adjusted_def_dropback_pct,
+      .data$opp_point_differential,
+      .data$opp_off_epa,
+      .data$opp_def_epa,
+      .data$opp_off_pass_epa,
+      .data$opp_def_pass_epa,
+      .data$opp_off_rush_epa,
+      .data$opp_def_rush_epa,
+      .data$opp_off_dropback_pct,
+      .data$opp_def_dropback_pct
+    ) %>%
+    dplyr::rename_with(.cols = starts_with("opp_"), ~ stringr::str_remove(., "opp_")) %>%
+    dplyr::mutate(location = "Away")
+
+  g2 <- dataset %>%
+    dplyr::transmute(.data$gameday, .data$game_id, .data$season, .data$week,
+      team = .data$home_team,
+      opponent = .data$away_team,
+      .data$win,
+      margin = .data$home_margin,
+      .data$adjusted_point_differential,
+      .data$adjusted_off_epa,
+      .data$adjusted_def_epa,
+      .data$adjusted_off_pass_epa,
+      .data$adjusted_def_pass_epa,
+      .data$adjusted_off_rush_epa,
+      .data$adjusted_def_rush_epa,
+      .data$adjusted_off_dropback_pct,
+      .data$adjusted_def_dropback_pct,
+      .data$point_differential,
+      .data$off_epa,
+      .data$def_epa,
+      .data$off_pass_epa,
+      .data$def_pass_epa,
+      .data$off_rush_epa,
+      .data$def_rush_epa,
+      .data$off_dropback_pct,
+      .data$def_dropback_pct
+    ) %>%
+    dplyr::mutate(location = "Home")
+
+  doubled <- dplyr::bind_rows(g1, g2) %>%
+    dplyr::arrange(.data$game_id, .data$gameday, .data$season, .data$week) %>%
+    dplyr::mutate(
+      off_pass_rush_epa = .data$off_dropback_pct * .data$off_pass_epa + (1 - .data$off_dropback_pct) * .data$off_rush_epa,
+      def_pass_rush_epa = .data$def_dropback_pct * .data$def_pass_epa + (1 - .data$adjusted_def_dropback_pct) * .data$adjusted_def_rush_epa,
+      adjusted_off_pass_rush_epa = .data$adjusted_off_dropback_pct * .data$adjusted_off_pass_epa + (1 - .data$adjusted_off_dropback_pct) * .data$adjusted_off_rush_epa,
+      adjusted_def_pass_rush_epa = .data$adjusted_def_dropback_pct * .data$adjusted_def_pass_epa + (1 - .data$adjusted_def_dropback_pct) * .data$adjusted_def_rush_epa
+    )
+
+  results <- doubled %>%
+    dplyr::filter(season > 1999) %>%
+    tidyr::pivot_longer(
+      cols = c(-c(.data$gameday:.data$margin, .data$location)),
+      names_to = "metric",
+      values_to = "value"
+    ) %>%
+    tidyr::nest(data = c(-.data$metric)) %>%
+    dplyr::mutate(
+      regression = map(data, ~ glm(win ~ value, data = ., family = "binomial")),
+      r_squared = map(regression, fmsb::NagelkerkeR2)
+    ) %>%
+    tidyr::hoist(r_squared, r.squared = "R2") %>%
+    dplyr::arrange(desc(r.squared)) %>%
+    dplyr::select(metric, r.squared) %>%
+    dplyr::mutate(moving_avg = type)
+}
+
+
+
+
+weekly_epa_df <- weekly_epa_play(pbp)
+
+# Simple static window
+model_dataset <- create_rolling_data(weekly_epa_df,
+  move = FALSE, pt_diff_type = "s",
+  epa_off = "s", epa_pass_o = "s", epa_rush_o = "s",
+  epa_def = "s", epa_pass_d = "s", epa_rush_d = "s",
+  epa_drop = "s"
+)
+
+results_simple <- double_for_accuracy_check(dataset = model_dataset, type = "Simple")
+
+# Dynamic window
+model_dataset <- create_rolling_data(weekly_epa_df,
+  move = TRUE, pt_diff_type = "s",
+  epa_off = "s", epa_pass_o = "s", epa_rush_o = "s",
+  epa_def = "s", epa_pass_d = "s", epa_rush_d = "s",
+  epa_drop = "s"
+)
+
+results_dynamic <- double_for_accuracy_check(dataset = model_dataset, type = "Dynamic")
+
+results <- dplyr::bind_rows(results_simple, results_dynamic)
+
+
+# a bit hacky, but it is still fairly tidy
+results %>%
+  mutate(
+    metric = str_replace_all(metric, "[\\s_]+", " ") %>%
+      str_to_title() %>%
+      str_replace_all(., "Epa", "EPA")
+  ) %>%
+  ggplot(aes(
+    y = fct_reorder(metric, r.squared),
+    fill = moving_avg,
+    x = r.squared
+  )) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(
+    values = c(
+      Dynamic = "#E3A082",
+      Simple = "#7499BD"
+    )
+  ) +
+  labs(
+    x = "Feature",
+    y = "R Squared",
+    fill = "Type"
+  ) +
+  becausejustynfun::white_theme()
