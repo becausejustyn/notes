@@ -1,0 +1,164 @@
+---
+title: "R Notebook"
+output: 
+  html_document: 
+    self_contained: no
+---
+
+```{r}
+library(nflfastR)
+library(tidyverse)
+library(sjPlot)
+library(sjmisc)
+library(sjlabelled)
+```
+
+```{r}
+pbp <- read_rds("~/Documents/nfl/data/pbp/play_by_play_2021.rds")
+```
+
+```{r}
+# --> Expected Points graph for 1&10 plays of week 1
+
+rel1 <- pbp %>%
+  select(ep, down, goal_to_go, ydstogo, yardline_100, posteam_type, qtr) %>%
+  filter(
+    down == 1, 
+    qtr <= 4,
+    ydstogo == 10)
+
+rel1 %>%
+  ggplot(aes(
+    x = yardline_100, 
+    y = ep, 
+    colour = factor(qtr)
+    )) +
+  geom_point(size = 0.9) +
+  geom_smooth(method = "lm", se = TRUE) +
+  scale_color_brewer(palette = "Spectral") +
+  labs(
+    x = "Yards to Go",
+    y = "Expected Points",
+    colour = "Quarter",
+    title = "Expected Points per Quarter on 1 & 10"
+  ) +
+  becausejustynfun::white_theme()
+```
+
+```{r}
+# --> Expected Points graph for all plays
+
+relall <- pbp %>%
+  select(ep, down, goal_to_go, ydstogo, yardline_100, posteam_type, qtr) %>%
+  filter(
+    !is.na(down),
+    !is.na(ep),
+    !is.na(yardline_100)
+    )
+
+relall %>%
+  ggplot(aes(
+    x = yardline_100, 
+    y = ep, 
+    colour = factor(down)
+    )) +
+  geom_point(size = 0.9) +
+  geom_smooth(
+    method = "lm",
+    se = TRUE,
+    formula = y ~ poly(x, 3, raw = TRUE)
+  ) +
+  scale_color_brewer(palette = "Spectral") +
+  labs(
+    x = "Yards to Go",
+    y = "Expected Points",
+    colour = "Down",
+    title = "Expected Points per Down"
+  ) +
+  becausejustynfun::white_theme()
+```
+
+```{r}
+# --> Simple OLS model
+
+reg <- lm(data = relall, ep ~ qtr + yardline_100 + ydstogo * down)
+summary(reg)
+
+tab_model(reg)
+```
+
+## Series Success
+
+A series is a set of downs. 
+Success will be referred as either getting another first down or scoring a TD.
+
+
+```{r}
+pbp %>% 
+  filter(
+    !is.na(pass),
+    !is.na(rush),
+    down <= 4, 
+    !is.na(epa),
+    penalty == 0, 
+    !play_type %in% c("qb_spike","qb_kneel", "no_play")
+    ) %>% 
+    group_by(down) %>% 
+    summarise(
+      Mean_Epa = mean(epa), 
+      Pass_Percentage = mean(pass), 
+      Run_Percentage = mean(rush), 
+      Attempts = n())
+```
+
+```{r}
+# Creating unique series IDs
+bengals_o$UniqueSeries <- paste(as.character(bengals_o$game_id),as.character(bengals_o$series))
+
+pbp <- pbp %>%
+  mutate(
+    #unique_series = paste(as.character(game_id), as.character(series))
+    unique_series = paste(game_id, series)
+    #unique_series = pastegame_id, series %>% as.character)
+         )
+
+pbp %>% 
+    filter(down == 1) %>% 
+    filter(play_type %in% c('run', 'pass')) %>% 
+    group_by(play_type) %>% 
+    summarise(
+      attempts = n(), 
+      series_success_rate = mean(series_success)
+      )
+```
+
+```{r}
+teams_rp <- pbp %>% 
+    filter(play_type %in% c('run', 'pass')) %>% 
+    group_by(posteam) %>% 
+    summarise(yards_gained, play_type) 
+```
+
+```{r}
+library(ggridges)
+
+teams_rp %>% 
+    mutate(team_fact = fct_rev(as.factor(posteam))) %>%
+    ggplot(aes(y = posteam)) +
+    geom_density_ridges(
+        aes(x = yards_gained, fill = play_type), 
+        alpha = .7, color = "white", from = -15, to = 45
+    ) +
+    labs(
+        x = "Yards Gained",
+        y = "Bengals vs League Distribution",
+        title = "Distribution of Yards Gained",
+        subtitle = "How much more explosive are pass plays than run plays?",
+        caption = "Visualization Inspiration: Tom Mock | Source: NFLFastR"
+    ) +
+    scale_y_discrete(expand = c(0, 0)) +
+    scale_x_continuous(expand = c(0, 0)) +
+    coord_cartesian(clip = "on") +
+    becausejustynfun::white_theme()
+```
+
