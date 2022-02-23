@@ -519,6 +519,54 @@ double_for_accuracy_check <- function(dataset, type) {
 }
 
 
+# Function to plot results
+plot_results <- function(results) {
+  results %>% 
+    dplyr::mutate(name = stringr::str_to_title(stringr::str_replace_all(metric, "_", " ")),
+                  name = stringr::str_remove(name, "usted"),
+                  name = stringr::str_replace_all(name, "Point Differential", "Pt Diff"),
+                  name = stringr::str_remove(name, " Epa"),
+                  type = dplyr::case_when(
+                    stringr::str_detect(metric, "pass_rush") ~ "Complex EPA",
+                    stringr::str_detect(metric, "pass") ~ "Pass EPA",
+                    stringr::str_detect(metric, "rush") ~ "Rush EPA",
+                    stringr::str_detect(metric, "off_epa|def_epa") ~ "Total EPA",
+                    stringr::str_detect(metric, "point_diff") ~ "Point Diff",
+                    stringr::str_detect(metric, "dropback") ~ "Dropback")) %>%
+    dplyr::mutate(type = forcats::fct_relevel(type, "Point Diff", "Total EPA", "Complex EPA", "Pass EPA", "Rush EPA"),
+                  name = forcats::fct_reorder(name, r.squared),
+                  moving_avg = forcats::fct_reorder(moving_avg, r.squared)) %>% 
+    dplyr::filter(type != "Dropback") %>% 
+    ggplot(aes(r.squared, name, fill = moving_avg)) +
+    geom_col(position = position_dodge(0.9)) +
+    geom_text(aes(label = round(r.squared, 4)),
+              hjust = 1, size = 2.5, color = "white", fontface = "bold",
+              position = position_dodge(0.9)) +
+    facet_wrap( ~ type, scales = "free") +
+    scale_x_continuous(expand = c(0, 0)) +
+    theme_bw() +
+    theme(plot.title = element_text(face = "bold", size = 28/.pt, hjust = 0),
+          plot.subtitle = element_text(face = "italic", size = 24/.pt),
+          strip.background = element_rect(color = "black", fill = "#C0C0C0", size = 3.5, linetype = "blank"),
+          strip.text.x = element_text(face = "bold"),
+          panel.grid.minor.x = element_blank(),
+          panel.grid.minor.y = element_blank(),
+          panel.grid.major.y = element_blank(),
+          panel.border = element_blank(),
+          axis.ticks = element_blank(),
+          axis.text = element_text(size = 24/.pt),
+          axis.title = element_text(face = "bold", size = 26/.pt),
+          plot.caption = element_text(face = "italic", size = 20/.pt),
+          legend.position = c(0.8, 0.2)) +
+    labs(x = expression(bold("Nagelkerke pseudo"~R^2)),
+         y = NULL,
+         fill = NULL,
+         title = "Predictive power of various EPA metrics for the outcome of an NFL game",
+         subtitle = "Logistic regression to predict win or loss",
+         caption = "Chart: @jacklich10 | Data: @nflfastR | Games from 2000-2020 NFL seasons")
+}
+
+
 
 
 weekly_epa_df <- weekly_epa_play(pbp)
@@ -571,3 +619,165 @@ results %>%
     fill = "Type"
   ) +
   becausejustynfun::white_theme()
+
+
+
+
+# Weighted
+model_dataset <- create_rolling_data(weekly_epa_df, move = TRUE, pt_diff_type = "w", 
+                                     epa_off = "w", epa_pass_o = "w", epa_rush_o = "w", 
+                                     epa_def = "w", epa_pass_d = "w", epa_rush_d = "w", 
+                                     epa_drop = "w")
+
+results_weighted <- double_for_accuracy_check(dataset = model_dataset, type = "Weighted")
+
+# Runnning
+model_dataset <- create_rolling_data(weekly_epa_df, move = TRUE, pt_diff_type = "r", 
+                                     epa_off = "r", epa_pass_o = "r", epa_rush_o = "r", 
+                                     epa_def = "r", epa_pass_d = "r", epa_rush_d = "r", 
+                                     epa_drop = "r")
+results_running <- double_for_accuracy_check(dataset = model_dataset, type = "Running")
+
+# Exponential
+model_dataset <- create_rolling_data(weekly_epa_df, move = TRUE, pt_diff_type = "e", 
+                                     epa_off = "e", epa_pass_o = "e", epa_rush_o = "e", 
+                                     epa_def = "e", epa_pass_d = "e", epa_rush_d = "e", 
+                                     epa_drop = "e")
+
+results_exp <- double_for_accuracy_check(dataset = model_dataset, type = "Exponential")
+
+results <- dplyr::bind_rows(results_dynamic %>%
+  dplyr::mutate(moving_avg = "Simple"), results_weighted, results_running, results_exp)
+
+results %>%
+  mutate(
+    metric = str_replace_all(metric, "[\\s_]+", " ") %>%
+      str_to_title() %>%
+      str_replace_all(., "Epa", "EPA")
+  ) %>%
+  ggplot(aes(
+    x = r.squared,
+    y = fct_reorder(metric, r.squared),
+    fill = moving_avg
+  )) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(
+    values = c(Exponential = "#66C2A5",
+               Running = "#AB98C8",
+               Simple = "#E1D83B",
+               Weighted = "#B3B3B3")
+  ) +
+  labs(
+    x = "Feature",
+    y = "R Squared",
+    fill = "Type"
+  ) +
+  becausejustynfun::white_theme()
+
+
+
+# Mixed moving averages
+model_dataset <- create_rolling_data(weekly_epa_df, move = T, pt_diff_type = "r", 
+                                     epa_off = "e", epa_pass_o = "e", epa_rush_o = "r", 
+                                     epa_def = "r", epa_pass_d = "r", epa_rush_d = "r", 
+                                     epa_drop = "r")
+results_mixed <- double_for_accuracy_check(dataset = model_dataset, type = "Mixed")
+results <- dplyr::bind_rows(results_dynamic %>% 
+                              dplyr::mutate(moving_avg = "Simple"), 
+                            results_weighted, results_running, results_exp, results_mixed)
+
+
+plot_results(results) +
+  scale_fill_brewer(palette = "Dark2", 
+                    guide = guide_legend(reverse = T))
+  
+
+
+
+
+# Function to display a team's efficiency over time
+efficiency_over_time <- function(dataset, current_season, current_week, team_name) {
+  # Double games (one row per team rather than one row per game)
+  g1 <- dataset %>% 
+    dplyr::transmute(gameday, game_id, season, week, 
+                     team = away_team,
+                     opponent = home_team,
+                     adjusted_off_epa = opp_adjusted_off_epa,
+                     adjusted_def_epa = opp_adjusted_def_epa) %>% 
+    dplyr::mutate(location = "Away")
+  
+  g2 <- dataset %>% 
+    dplyr::transmute(gameday, game_id, season, week, 
+                     team = home_team,
+                     opponent = away_team,
+                     adjusted_off_epa,
+                     adjusted_def_epa) %>% 
+    dplyr::mutate(location = "Home")
+  
+  # Bind together and fill in offense/defense efficiency for bye weeks
+  doubled <- dplyr::bind_rows(g1, g2) %>% 
+    dplyr::arrange(game_id, gameday, season, week) %>% 
+    tidyr::complete(season, week, team) %>% 
+    dplyr::mutate(season = ifelse(week == 1, season - 1, season),
+                  week = ifelse(week == 1, 17, week - 1)) %>% 
+    dplyr::group_by(team) %>% 
+    tidyr::fill(adjusted_off_epa, adjusted_def_epa, .direction = "updown") %>% 
+    dplyr::group_by(season, week) %>% 
+    dplyr::mutate(off_rank = rank(-adjusted_off_epa, ties.method = "random"),
+                  def_rank = rank(adjusted_def_epa, ties.method = "random")) %>% 
+    dplyr::ungroup() %>% 
+    dplyr::left_join(nflfastR::teams_colors_logos %>%
+                       select(team_abbr, team_logo_espn), 
+                     by = c("team" = "team_abbr")) %>% 
+    #dplyr::filter(week <= 17, is.na(gameday)) %>%
+    dplyr::filter(season %in% current_season, week <= current_week) %>% 
+    tidyr::pivot_longer(cols = ends_with("_rank"), names_to = "side", values_to = "rank") %>% 
+    dplyr::mutate(side = ifelse(side == "off_rank", "Offensive Efficiency", "Defensive Efficiency"),
+                  side = fct_relevel(side, "Offensive Efficiency", "Defensive Efficiency"))
+  
+  if (length(current_season) > 1) {
+    season <- paste0(current_season[1], "-", current_season[length(current_season)])
+  } else {
+    season <- current_season
+  }
+  
+  plot <- doubled %>% 
+    ggplot(aes(week, rank, color = team)) +
+    geom_line(aes(size = ifelse(team == team_name, "A", "B"), alpha = ifelse(team == team_name, 1, 0.2)), 
+              show.legend = F) +
+    ggimage::geom_image(aes(max(week), rank, image = ifelse(week == max(week[team == team_name]) & team == team_name, team_logo_espn, NA)),
+                        asp = 1.618, by = "height", size = 0.15, inherit.aes = F) +
+    facet_wrap(~ side, nrow = 1) +
+    scale_x_continuous(breaks = seq(0, 17, by = 1)) +
+    scale_y_reverse(breaks = seq(1, 32, by = 3)) +
+    scale_size_manual(values = c(1.5, 0.75)) +
+    theme_bw() +
+    theme(aspect.ratio = 9/16,
+          plot.title = element_text(face = "bold", size = 28/.pt, hjust = 0),
+          plot.subtitle = element_text(face = "italic", size = 24/.pt),
+          strip.background = element_rect(color = "black", fill = "#C0C0C0", size = 3.5, linetype = "blank"),
+          strip.text.x = element_text(face = "bold"),
+          panel.grid.minor.x = element_blank(),
+          panel.grid.minor.y = element_blank(),
+          panel.grid.major.x = element_blank(),
+          panel.border = element_blank(),
+          axis.ticks = element_blank(),
+          axis.text = element_text(size = 24/.pt),
+          axis.title = element_text(face = "bold", size = 26/.pt),
+          axis.title.y = element_text(angle = 0, vjust = 0.5),
+          plot.caption = element_text(face = "italic", size = 20/.pt)) +
+    labs(title = paste0(season, " ", team_name, " Efficiency"),
+         subtitle = "EPA/Play adjusted for opponent",
+         x = "Week",
+         y = "League\nRank",
+         caption =  "Chart: @jacklich10 | Data: @nflfastR")
+  
+  if (length(current_season) > 1) {
+    return(plot + facet_wrap(season ~ side))
+  } else {
+    return(plot + facet_wrap(~ side, nrow = 1))
+  }
+}
+
+
+efficiency_over_time(model_dataset, current_season = 2021, current_week = 17, team_name = "PHI")
