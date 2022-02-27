@@ -1,7 +1,7 @@
 
 
 add_divisions <- function(df){
-  
+
   df <- df %>%
     dplyr::mutate(
       division = dplyr::case_when(
@@ -15,6 +15,6 @@ add_divisions <- function(df){
         .data$team %in% c("DEN", "KC", "LV", "LAC") ~ "AFC West"
       ),
       conference = dplyr::if_else(.data$division %in% c("AFC North", "AFC South", "AFC East", "AFC West"), "AFC", "NFC"))
-  
+
   return(df)
 }

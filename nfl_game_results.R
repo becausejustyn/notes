@@ -1,5 +1,5 @@
 
-game_results <- read_csv("https://raw.githubusercontent.com/leesharpe/nfldata/master/data/games.csv") %>%
+game_results <- readr::read_csv("https://raw.githubusercontent.com/leesharpe/nfldata/master/data/games.csv") %>%
   dplyr::mutate(dplyr::across(
     c("home_team", "away_team"),
     ~ stringr::str_replace_all(., c(
