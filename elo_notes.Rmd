@@ -1,0 +1,184 @@
+---
+title: "R Notebook"
+output: 
+  html_document: 
+    self_contained: no
+---
+
+Fundamentally, Elo ratings are quite simple. All teams (or competitors for individual competition such as tennis), start with a baseline value e.g. 1500. The baseline is what an average team could expect their Elo value to be. 
+The beautiful thing about Elo scores, is that they translate to expected outcomes. 
+The starting Elo formula for calculating the expected outcome of a game is
+
+$$
+\text{Expected Score} = \frac{1}{1+10^{\frac{(Team_{B} - Team_{A})}{\text{Scaling Factor}}}}
+$$
+
+This looks very similar to the logistic function, e.g.
+
+$$
+f(x) = \frac{e^{\alpha + \beta X}}{1 + e^{\alpha + \beta X}}
+$$
+
+Which becomes more apparent as we look how Elo works.
+
+- Expected Score is the win probability for $Team_{A}$
+- $Team_{A}$ and $Team_{B}$ are the two teams playing
+- Scaling Factor is an arbitary value that scales the values. Traditionally 400 is used, which means a difference in 400 Elo would give the favoured team a $90%$ of winning.
+
+For example, say $Team_{A}$ has an Elo rating of $1600$ and $Team_{B}$ has a rating of $1500$, then we simple input the values into the formula, giving $Team_{A}$ a $64%$ chance of winning.
+
+$$
+\text{Expected Score/Win Probability} = \frac{1}{1+10^{\frac{(1500 - 1600)}{400}}} = \frac{1}{1 + 10^{\frac{-100}{400}}} = 0.64
+$$
+
+This can be done in R or Python with 
+
+```{r}
+get_expected_score <- function(team_a, team_b){
+  exp <- (team_b - team_a) / 400
+    return(1 / (1 + 10^exp))
+}
+
+#get_expected_score(team_a = 1500, team_b = 1500)
+```
+
+```{python}
+def get_expected_score(rating, opp_rating):
+    exp = (opp_rating - rating) / 400
+    return(1 / (1 + 10**exp))
+```
+
+
+After each round or game, Elo values are adjusted depending if a team wins or loses. The amount values change after a single game is determined with $K$. 
+
+First each teams win probability is calculated like above
+Then the difference between their win probability (or expected score) and actual scores are used to make an adjustment
+To do this, games are scored as $0$ for a loss, $0.5$ for a tie, and $1$ for a win. 
+Once we have the difference between the expected value and game result, we multiple that value by our $K$ value. 
+A larger $K$ creates more variance as the values get updated, whereas a lower $K$ value takes longer to adjust to new information. 538 in their Elo model use a $K$ of $25$.
+
+
+$$
+\underbrace{Elo_{Team_{A}}}_{\text{new Elo}} = \underbrace{Elo_{Team_{A}}}_{\text{old Elo}} + \text{ K Factor } \Big (\text{ Actual Score }_{Team_{A}} - \text{ Expected Score }_{Team_{A}}\Big )
+$$
+
+For example, imagine $Team_{A}$ and $Team_{B}$ play each other in round 1 with an Elo of 1500. Their expected score will both be 0.5 since they have the same Elo. $Team_{A}$ beats $Team_{B}$, which leads to $Team_{A}$ being assigned a $1$ for the victory and $Team_{B}$ a $0$. As such we can do
+
+For $Team_{A}$
+
+$$
+\underbrace{Elo_{Team_{A}}}_{\text{new Elo}} = \underbrace{Elo_{Team_{A}}}_{\text{old Elo}} + 25 \times (1 - 0.5) = 25
+$$
+
+$$
+Elo_{Team_{A}} = 1500+25 = 1525
+$$
+
+and $Team_{B}$
+
+$$
+\underbrace{Elo_{Team_{B}}}_{\text{new Elo}} = \underbrace{Elo_{Team_{B}}}_{\text{old Elo}} + 25 \times (0 - 0.5) = -12.5
+$$
+
+$$
+Elo_{Team_{B}} = 1500-12.5 = 1487.5
+$$
+
+
+Calculating the new elo
+
+```{r}
+get_new_elos <- function(home_rating, away_rating, margin, k = 25) {
+  
+  home_score <- case_when(
+    # 0 for a loss
+    margin < 0 ~ 0,
+    # 1 for a win
+    margin > 0 ~ 1,
+    # 0.5 if tie
+    TRUE ~ 0.5
+  )
+
+  # get expected home score
+  expected_home_score <- get_expected_score(home_rating, away_rating)
+  
+  # multiply difference of actual and expected score by k value and adjust home rating
+  new_home_score <- home_rating + k * (home_score - expected_home_score) %>% round(2)
+
+  # repeat these steps for the away team away score is inverse of home score
+  away_score <- 1 - home_score
+  expected_away_score <- get_expected_score(away_rating, home_rating)
+  new_away_score <- away_rating + k * (away_score - expected_away_score) %>% round(2)
+
+  # return a tuple
+  return(new_home_score, new_away_score)
+}
+```
+
+```{r}
+games = c()
+
+for year in range(2000, 2022):
+    response = games_api.get_games(year=year)
+    games = [*games, *response]
+
+games = [dict(
+            start_date=g.start_date,
+            home_team=g.home_team,
+            home_conference=g.home_conference,
+            home_points=g.home_points,
+            away_team=g.away_team,
+            away_conference=g.away_conference,
+            away_points=g.away_points
+            ) for g in games if g.home_points is not None and g.away_points is not None]
+games.sort(key=date_sort)
+```
+
+
+
+```{python}
+def get_new_elos(home_rating, away_rating, margin):
+    k = 25
+
+    # score of 0.5 for a tie
+    home_score = 0.5
+    if margin > 0:
+        # score of 1 for a win
+        home_score = 1
+    elif margin < 0:
+        #score of 0 for a loss
+        home_score = 0
+
+    # get expected home score
+    expected_home_score = get_expected_score(home_rating, away_rating)
+    # multiply difference of actual and expected score by k value and adjust home rating
+    new_home_score = home_rating + k * (home_score - expected_home_score)
+
+    # repeat these steps for the away team
+    # away score is inverse of home score
+    away_score = 1 - home_score
+    expected_away_score = get_expected_score(away_rating, home_rating)
+    new_away_score = away_rating + k * (away_score - expected_away_score)
+
+    # return a tuple
+    return (round(new_home_score), round(new_away_score))
+```
+
+
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+#https://blog.collegefootballdata.com/talking-tech-elo-ratings/
+```
+
