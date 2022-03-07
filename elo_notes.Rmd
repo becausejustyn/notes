@@ -23,9 +23,9 @@ Which becomes more apparent as we look how Elo works.
 
 - Expected Score is the win probability for $Team_{A}$
 - $Team_{A}$ and $Team_{B}$ are the two teams playing
-- Scaling Factor is an arbitary value that scales the values. Traditionally 400 is used, which means a difference in 400 Elo would give the favoured team a $90%$ of winning.
+- Scaling Factor is an arbitary value that scales the values. Traditionally 400 is used, which means a difference in 400 Elo would give the favoured team a $90\%$ of winning.
 
-For example, say $Team_{A}$ has an Elo rating of $1600$ and $Team_{B}$ has a rating of $1500$, then we simple input the values into the formula, giving $Team_{A}$ a $64%$ chance of winning.
+For example, say $Team_{A}$ has an Elo rating of $1600$ and $Team_{B}$ has a rating of $1500$, then we simple input the values into the formula, giving $Team_{A}$ a $64\%$ chance of winning.
 
 $$
 \text{Expected Score/Win Probability} = \frac{1}{1+10^{\frac{(1500 - 1600)}{400}}} = \frac{1}{1 + 10^{\frac{-100}{400}}} = 0.64
@@ -43,8 +43,8 @@ get_expected_score <- function(team_a, team_b){
 ```
 
 ```{python}
-def get_expected_score(rating, opp_rating):
-    exp = (opp_rating - rating) / 400
+def get_expected_score(team_a, team_b):
+    exp = (team_b - team_a) / 400
     return(1 / (1 + 10**exp))
 ```
 
@@ -180,5 +180,28 @@ def get_new_elos(home_rating, away_rating, margin):
 
 ```{r}
 #https://blog.collegefootballdata.com/talking-tech-elo-ratings/
+```
+
+Just compare 10 games for the spread using 538 
+
+```{r}
+nfl_elo_538 <- read_csv("Downloads/nfl_new/nfl_elo_latest.csv") %>%
+  filter(date == "2022-01-09") %>%
+  select(home_team = team1, away_team = team2, home_elo = elo1_pre, away_elo = elo2_pre) %>%
+  mutate(
+    elo_diff = home_elo - away_elo,
+    #round to nearest half
+    predicted_spread = round((elo_diff/25) * 2)/2
+  )
+
+
+
+schedules <- nflreadr::load_schedules(seasons = 2021) %>%
+  filter(gameday == "2022-01-09") %>%
+  select(home_team, away_team, spread_line)
+
+
+test <- nfl_elo_538 %>%
+  left_join(schedules, by = c("home_team", "away_team"))
 ```
 
